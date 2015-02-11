@@ -1,5 +1,6 @@
+#!/usr/bin/env python
 """
-Streams and prints named entities with >3 words from Twitter
+Streams and prints named entities from Twitter
 
 Notes
 -----
@@ -9,6 +10,8 @@ TWKEYS set in the section [app].
 import configparser
 import logging
 import nltk
+import signal
+import sys
 import twython
 
 # Set up logging
@@ -54,7 +57,7 @@ class LanguageDetector(object):
 
 class NamedEntityStreamer(twython.TwythonStreamer):
     """
-    Calls the callback with names found in the twitter stream of >3 words
+    Calls the callback with names found in the twitter stream
 
     Paramters
     ---------
@@ -87,9 +90,8 @@ class NamedEntityStreamer(twython.TwythonStreamer):
                 people = filter(lambda entity: entity.label() == 'PERSON', entities)
                 for p in people:
                     leaves = p.leaves()
-                    if len(leaves) > 3:
-                        name = ' '.join(a for a, b in leaves)
-                        self.__callback(name)
+                    name = ' '.join(a for a, b in leaves)
+                    self.__callback(name)
 
     def on_error(self, status_code, data):
         """
@@ -100,23 +102,39 @@ class NamedEntityStreamer(twython.TwythonStreamer):
         self.disconnect()
 
 
-def main():
+def stream_names(callback, twitter_cred):
     """
-    Run the named entity streamer and print each name
+    Run the named entity streamer on statuses and print each name
+
+    Paramters
+    ---------
+    callback : callable
+        To be called with each name (str)
+    *args, **kwargs:
+    twitter_cred : Iterable
+        Twitter credentials for twython.TwythonStreamer
     """
-    twconf = configparser.ConfigParser()
-    twconf.read(TWITTER_CONF)
-    try:
-        appconf = twconf['app']
-        twkeys = tuple(appconf[key] for key in TWKEYS)
-    except KeyError:
-        raise ValueError('Twitter config not valid')
-    streamer = NamedEntityStreamer(print, *twkeys)
+    streamer = NamedEntityStreamer(callback, *twitter_cred)
+
+    # Close gracefully on SIGINT
+    def signal_handler(signal, frame):
+        streamer.disconnect()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    # start streaming named entities from statuses
     streamer.statuses.filter(track='twitter')
 
 
 if __name__ == '__main__':
+    twconf = configparser.ConfigParser()
+    twconf.read(TWITTER_CONF)
     try:
-        main()
-    except Exception as e:
-        log.error('Exception occured in main: %s' % e)
+        appconf = twconf['app']
+        twitter_cred = tuple(appconf[key] for key in TWKEYS)
+    except KeyError:
+        log.error('Twitter config not valid')
+    else:
+        def printer(s):
+            print ('%s.\r\n\r\n' % s, end='', flush=True)
+        stream_names(printer, twitter_cred)
