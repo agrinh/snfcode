@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 """
-Streams and prints named entities from Twitter
+Streams and prints named entities from english tweets on Twitter
+
+Arguments are tracked. E.g. to track #bieber:
+> ./namestream.py #bieber
 
 Notes
 -----
@@ -26,33 +29,8 @@ TWITTER_CONF = 'conf/twitter.conf'
 TWKEYS = ['consumer_key', 'consumer_secret', 'access_token', 'access_token_secret']
 
 
-class LanguageDetector(object):
-    """
-    Detect language by requiring a fraction of known words
 
-    Use the == operator to check if some text is of the language in the
-    instance.
 
-    Paramters
-    ---------
-    words : Iterable
-        Iterable of str, vocabulary of language
-    threshold : Float
-        Fraction of known words to classify text as in the language defined by
-        the vocabulary
-    """
-
-    def __init__(self, words, threshold):
-        self.__threshold = threshold
-        self.__vocabulary = set(word.lower() for word in words)
-
-    def __eq__(self, text):
-        """
-        Returns true if text is of the language specified by the vocabulary
-        """
-        words = set(word.lower() for word in text.split())
-        unusual = words - self.__vocabulary
-        return len(unusual) <= len(words) * self.__threshold
 
 
 class NamedEntityStreamer(twython.TwythonStreamer):
@@ -70,7 +48,6 @@ class NamedEntityStreamer(twython.TwythonStreamer):
     --------
     twython.TwythonStreamer : Base class providing functionality
     """
-    english = LanguageDetector(nltk.corpus.words.words(), 0.5)
 
     def __init__(self, callback, *args, **kwargs):
         self.__callback = callback
@@ -82,15 +59,15 @@ class NamedEntityStreamer(twython.TwythonStreamer):
         """
         if 'text' in data:
             text = data['text']
-            if self.english == text: 
-                tokens = nltk.word_tokenize(text)
-                pos = nltk.pos_tag(tokens)
-                chunks = nltk.ne_chunk(pos)
-                entities = filter(lambda item: isinstance(item, nltk.tree.Tree), chunks)
-                people = filter(lambda entity: entity.label() == 'PERSON', entities)
-                for p in people:
-                    leaves = p.leaves()
-                    name = ' '.join(a for a, b in leaves)
+            tokens = nltk.word_tokenize(text)
+            pos = nltk.pos_tag(tokens)
+            chunks = nltk.ne_chunk(pos)
+            entities = filter(lambda item: isinstance(item, nltk.tree.Tree), chunks)
+            people = filter(lambda entity: entity.label() == 'PERSON', entities)
+            for p in people:
+                leafs = p.leaves()
+                if len(leafs) == 2 or len(leafs) == 3:
+                    name = ' '.join(a for a, b in leafs)
                     self.__callback(name)
 
     def on_error(self, status_code, data):
@@ -102,7 +79,7 @@ class NamedEntityStreamer(twython.TwythonStreamer):
         self.disconnect()
 
 
-def stream_names(callback, twitter_cred):
+def stream_names(callback, twitter_cred, **twargs):
     """
     Run the named entity streamer on statuses and print each name
 
@@ -110,9 +87,10 @@ def stream_names(callback, twitter_cred):
     ---------
     callback : callable
         To be called with each name (str)
-    *args, **kwargs:
     twitter_cred : Iterable
         Twitter credentials for twython.TwythonStreamer
+    **twargs
+        Filter parameters for twitter filter streaming
     """
     streamer = NamedEntityStreamer(callback, *twitter_cred)
 
@@ -123,7 +101,7 @@ def stream_names(callback, twitter_cred):
 
     signal.signal(signal.SIGINT, signal_handler)
     # start streaming named entities from statuses
-    streamer.statuses.filter(track='twitter')
+    streamer.statuses.filter(**twargs)
 
 
 if __name__ == '__main__':
@@ -136,5 +114,7 @@ if __name__ == '__main__':
         log.error('Twitter config not valid')
     else:
         def printer(s):
-            print ('%s.\r\n\r\n' % s, end='', flush=True)
-        stream_names(printer, twitter_cred)
+            print ('%s.\r\n\r\n' % (s, ), end='', flush=True)
+        track = ' '.join(sys.argv[1:])
+        print('Tracking: %s' % track)
+        stream_names(printer, twitter_cred, language='en', track=track)

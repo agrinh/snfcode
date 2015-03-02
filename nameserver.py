@@ -6,6 +6,7 @@ import multiprocessing
 import namestream
 import queue
 import socket
+import sys
 
 
 class ConnectionHandler(asynchat.async_chat):
@@ -42,7 +43,7 @@ class ConnectionHandler(asynchat.async_chat):
         Push items on queue and allow async_chat to handle writes
         """
         try:
-            item = self.__server._queue.get(0)
+            item = self.__server._queue.get(False)
         except queue.Empty:
             pass
         else:
@@ -170,11 +171,25 @@ if __name__ == '__main__':
     else:
         # listening server socket spec
         sockspec = (socket.AF_INET, socket.SOCK_STREAM)
-        addr = ('localhost', 9904)
+        addr = ('0.0.0.0', 9904)
+        track = ' '.join(sys.argv[1:])
 
         # start asyncore process
         mpqueue = multiprocessing.Queue(100)
+        
+        def enqueue(item):
+            """
+            Enqueue items
+
+            Drop if queue is full.
+            """
+            try:
+                mpqueue.put(item, 0)
+            except queue.Full:
+                pass
+
         async = AsyncoreProcess()
         async.add(NameServer, sockspec, addr, mpqueue)
         async.start()
-        namestream.stream_names(mpqueue.put, twitter_cred)
+        print('Tracking: %s' % track)
+        namestream.stream_names(enqueue, twitter_cred, language='en', track=track)
