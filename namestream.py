@@ -13,6 +13,7 @@ TWKEYS set in the section [app].
 import configparser
 import logging
 import nltk
+import requests
 import signal
 import sys
 import twython
@@ -83,6 +84,8 @@ def stream_names(callback, twitter_cred, **twargs):
     """
     Run the named entity streamer on statuses and print each name
 
+    Restarts the stream if a requests.exceptions.RequestException is raised.
+
     Paramters
     ---------
     callback : callable
@@ -101,7 +104,13 @@ def stream_names(callback, twitter_cred, **twargs):
 
     signal.signal(signal.SIGINT, signal_handler)
     # start streaming named entities from statuses
-    streamer.statuses.filter(**twargs)
+    while True:
+        try:
+            streamer.statuses.filter(**twargs)
+        except requests.exceptions.RequestException:
+            continue
+        else:
+            break
 
 
 if __name__ == '__main__':
